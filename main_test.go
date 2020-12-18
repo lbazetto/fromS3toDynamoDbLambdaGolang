@@ -22,8 +22,3 @@ func TestReturnsRightPositionOfLine(t *testing.T) {
 		t.Errorf("Expected %s, received %s", name2, myData[1])
 	}
 }
-
-func TestInsertDataIntoDatabase(t *testing.T) {
-	myData := []string{"data1", "data2"}
-	insertIntoDynamoDB(myData, "file1")
-}
