@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
+	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 )
@@ -23,13 +24,28 @@ func main() {
 	lambda.Start(handler)
 }
 
+type dynamoSettings struct {
+	svc dynamodbiface.DynamoDBAPI
+}
+
 func handler(ctx context.Context, s3Event events.S3Event) {
 	for _, record := range s3Event.Records {
 		s3 := record.S3
 		fmt.Printf("[%s - %s] Bucket = %s, Key = %s \n", record.EventSource, record.EventTime, s3.Bucket.Name, s3.Object.Key)
 		fileContent := getDataFromS3File(s3.Bucket.Name, s3.Object.Key)
 		dataExtracted := extractData(fileContent)
-		insertIntoDynamoDB(dataExtracted, s3.Object.Key)
+
+		sess := session.Must(session.NewSessionWithOptions(session.Options{
+			SharedConfigState: session.SharedConfigEnable,
+		}))
+
+		svc := dynamodb.New(sess)
+
+		settings := &dynamoSettings{
+			svc: svc,
+		}
+
+		settings.insertIntoDynamoDB(dataExtracted, s3.Object.Key)
 		fmt.Printf("Finished")
 	}
 }
@@ -82,17 +98,13 @@ func extractData(data string) []string {
 	return names
 }
 
-func insertIntoDynamoDB(dataToInsert []string, fileName string) {
-	type MyDataFromS3 struct {
-		FileKey string
-		Name    string
-	}
+// MyDataFromS3 table structure
+type MyDataFromS3 struct {
+	FileKey string
+	Name    string
+}
 
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		SharedConfigState: session.SharedConfigEnable,
-	}))
-
-	svc := dynamodb.New(sess)
+func (settings *dynamoSettings) insertIntoDynamoDB(dataToInsert []string, fileName string) {
 
 	for currentIndex, currentItem := range dataToInsert {
 		data := MyDataFromS3{
@@ -111,7 +123,7 @@ func insertIntoDynamoDB(dataToInsert []string, fileName string) {
 			TableName: aws.String(tableName),
 		}
 
-		_, err = svc.PutItem(input)
+		_, err = settings.svc.PutItem(input)
 		if err != nil {
 			exitErrorf("Got error calling PutItem:", err)
 		}
